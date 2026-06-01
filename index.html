@@ -1,0 +1,69 @@
+<!doctype html>
+<html style="width:100%;height:100%;">
+<head>
+	<meta charset="utf-8">
+	<meta name="description" content="The Cattle-Climate Feedback Loop - Team 23">
+	<title>The Cattle-Climate Feedback Loop</title>
+	<style>
+		/* tooltip for details-on-demand (hover) */
+		#tooltip {
+			position: absolute;
+			pointer-events: none;
+			background: rgba(33, 33, 33, 0.92);
+			color: #fff;
+			font: 12px sans-serif;
+			padding: 6px 8px;
+			border-radius: 4px;
+			opacity: 0;            /* hidden until hover */
+			line-height: 1.35;
+		}
+		/* shared time control (drives all views) - fixed bottom bar */
+		#controls {
+			position: fixed;
+			left: 0; right: 0; bottom: 0;
+			height: 52px;
+			display: flex;
+			align-items: center;
+			gap: 12px;
+			padding: 0 20px;
+			box-sizing: border-box;
+			background: #fafafa;
+			border-top: 1px solid #e0e0e0;
+			font: 13px sans-serif;
+		}
+		#play-btn {
+			font: 13px sans-serif;
+			padding: 5px 12px;
+			border: 1px solid #bbb;
+			border-radius: 4px;
+			background: #fff;
+			cursor: pointer;
+			min-width: 84px;
+		}
+		#play-btn:hover { background: #f0f0f0; }
+		#year-slider { flex: 1; cursor: pointer; }
+		#year-label {
+			font-weight: bold;
+			min-width: 42px;
+			text-align: right;
+			font-variant-numeric: tabular-nums;
+		}
+	</style>
+</head>
+<body style="width:100%;height:100%;margin:0;font-family:sans-serif;">
+	<svg width="100%" height="100%"></svg>
+	<div id="tooltip"></div>
+
+	<!-- shared time control: drives the map (and later, all coordinated views) -->
+	<div id="controls">
+		<button id="play-btn">&#9654; Play</button>
+		<input id="year-slider" type="range" min="1990" max="2021" value="2021" step="1">
+		<span id="year-label">2021</span>
+	</div>
+
+	<!-- D3 v5 (matches class stack) + topojson-client for world geometry -->
+	<script src="https://d3js.org/d3.v5.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/npm/topojson-client@3"></script>
+	<script src="main.js"></script>
+</body>
+</html>
