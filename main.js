@@ -1,4 +1,4 @@
-// The Cattle-Climate Feedback Loop - Team 23
+// The Cattle-Climate Feedback Loop - Team 22
 // Coordinated multi-view dashboard (Martini Glass), all driven by one shared time slider.
 //   View 1 (main character): choropleth world map of agricultural CH4 emissions by country.
 //   View 2: dual-axis lag chart - global CH4 (left axis) vs global temperature anomaly (right).
@@ -6,8 +6,11 @@
 // Interactions: shared time slider + play/pause, hover tooltips, click a country to highlight
 //   it across the map and the bar chart, animated transitions on every year change.
 //
-// Data: FAO agricultural GHG emissions (Element "Emissions (CH4)", kt, 1990-2021) + FAO
-//   temperature change (World "Meteorological year" anomaly, degC, 1961-2019). Geo: world-atlas.
+// Data: beef-attributed cattle methane (kt CH4, 1990-2021) = FAOSTAT cattle CH4 (GLE,
+//   "Livestock total (Emissions CH4)", FAO TIER 1) split by each country's beef:dairy ratio
+//   from FAOSTAT Emissions intensities (EI, CO2eq of "Meat of cattle" vs "Raw milk of cattle").
+//   Beef's share is therefore an estimate, disclosed in the UI. Temperature: FAO World
+//   "Meteorological year" anomaly (degC, 1961-2019). Geo: world-atlas. See data/build_beef_methane.ps1.
 // Join: FAO "Area Code (M49)" matches the numeric country id in the world-atlas TopoJSON.
 // Coding style follows the class stack (HW2/HW3): D3 v5, responsive draw() + resize,
 //   margin-convention, d3.json/d3.csv(...).then().catch(), enter/update/exit, inline comments.
@@ -28,6 +31,43 @@ let ch4GlobalMax = 1;           // max global CH4 (lag chart left axis)
 let tempMax = 1;                // max global anomaly (lag chart right axis)
 let playTimer = null;           // d3.interval handle while the animation is playing
 
+// ---- guided-tour state (Martini Glass: 5 author-driven acts, then free exploration) ----
+let tourActive = true;          // true while the guided tour is running
+let actIndex = 0;               // current act (0-based)
+let viewBounds = {};            // {map,lag,bar} pixel rects, captured each draw() for focus highlight
+const ACCENT = "#2c7fb8";       // tour highlight color (matches CH4 blue)
+const BRAZIL_M49 = 76;          // largest beef-attributed methane emitter (highlighted in Act 4)
+
+// Each act sets the year, an optional selected country, which view to spotlight, an optional
+// auto-play, and the narrative copy shown in the on-screen card.
+const ACTS = [
+    {
+        year: 1990, select: null, focus: "map", play: false,
+        title: "The Hidden Connection",
+        body: "Raising cattle for beef releases methane (CH\u2084) \u2014 a gas dozens of times stronger than CO\u2082 over its lifetime. The map shades each country by the methane attributed to its beef herds; darker means more. Even in 1990 a few beef-producing nations dominate. (Beef's share is estimated from FAO's beef-vs-dairy emission split.)"
+    },
+    {
+        year: 2019, select: null, focus: "lag", play: true,
+        title: "The Lag",
+        body: "Watch the two lines on the right. Methane (blue) climbs steadily, but the temperature anomaly (red) keeps responding years later. This 5-to-10-year lag is exactly why the beef\u2013climate link is so easy to miss in year-by-year data."
+    },
+    {
+        year: 2021, select: null, focus: "bar", play: false,
+        title: "The Wrong Direction",
+        body: "Methane has caused about 30% of global warming since pre-industrial times (UN Environment Programme), and the IPCC says it must fall 40\u201345% by 2030 to keep 1.5\u00b0C within reach. Beef pulls the other way: enteric fermentation is the single largest farm-methane source (FAO), and this beef-attributed methane has risen about 29% since 1990. Drag the slider 1990\u20132021 \u2014 the same handful of beef producers stays on top, and the total keeps climbing."
+    },
+    {
+        year: 2021, select: BRAZIL_M49, focus: "map", play: false,
+        title: "The Beef Frontier",
+        body: "Brazil (highlighted) is the single largest source of beef-attributed methane, driven by its vast beef-cattle herd and pasture expansion. Tellingly, India \u2014 the top emitter of total agricultural methane \u2014 ranks far lower here, because its cattle are raised mostly for dairy and draught, not beef."
+    },
+    {
+        year: 2021, select: null, focus: "map", play: false,
+        title: "The Power on Your Plate",
+        body: "So where do you come in? The herds expanding across Brazil and the Americas are driven by global demand \u2014 and beef has the highest methane footprint of any food per gram of protein. Because methane is short-lived, eating less beef slows warming fast; and unlike dairy manure, a grazing animal's methane can't be captured, so lower demand is the most direct lever we have. Now explore the data yourself \u2014 any year, any country \u2014 and see where your plate fits in."
+    }
+];
+
 // sequential color scale (light -> deep red). We color by sqrt(value) to spread the
 // heavily skewed distribution (a few huge emitters dominate the raw scale).
 const colorScale = d3.scaleSequential(d3.interpolateYlOrRd);
@@ -44,15 +84,15 @@ let barXScale, barRowH, barLabelW;
 
 // subtitle text reflects the year currently shown
 function subtitleText() {
-    return `Agricultural methane (CH\u2084) emissions by country, ${currentYear} \u2014 kilotonnes`;
+    return `Beef-attributed cattle methane (CH\u2084) by country, ${currentYear} \u2014 kilotonnes (estimated)`;
 }
 
 // short story caption that changes by era (lightweight narrative layer)
 function narrativeText(year) {
-    if (year <= 1995) return "Early 1990s: agricultural methane is already a major source, but global warming is only beginning to climb.";
-    if (year <= 2005) return "2000s: livestock and rice production expand, emissions keep rising \u2014 and the temperature anomaly accelerates.";
-    if (year <= 2015) return "2010s: methane and temperature climb together as the cattle\u2013climate feedback loop tightens.";
-    return "Recent years: agricultural methane reaches record highs; the full warming response is still unfolding.";
+    if (year <= 1995) return "Early 1990s: beef herds are already a major methane source, but global warming is only beginning to climb.";
+    if (year <= 2005) return "2000s: beef production expands \u2014 especially across the Americas \u2014 and methane keeps rising as the temperature anomaly accelerates.";
+    if (year <= 2015) return "2010s: methane and temperature climb together as the beef\u2013climate feedback loop tightens.";
+    return "Recent years: beef-driven methane reaches record highs; the full warming response is still unfolding.";
 }
 
 // fill color for a CH4 value (grey if no data)
@@ -93,6 +133,10 @@ function draw() {
     svg.append("text").attr("class", "narrative").attr("x", margin.left).attr("y", 65)
         .attr("font-size", "11px").attr("font-style", "italic").attr("fill", "#888")
         .text(narrativeText(currentYear));
+    // methods/source disclosure (top-right of header)
+    svg.append("text").attr("x", width - margin.right).attr("y", 28).attr("text-anchor", "end")
+        .attr("font-size", "10px").attr("fill", "#aaa")
+        .text("Beef share estimated from FAO beef/dairy emission split \u00b7 Data: FAOSTAT GLE + EI");
 
     // ===================== View 1: choropleth map =====================
     const mapG = svg.append("g").attr("transform", `translate(${margin.left}, ${margin.top})`);
@@ -107,13 +151,15 @@ function draw() {
         .attr("stroke", "#fff").attr("stroke-width", 0.4)
         .style("cursor", "pointer")
         .on("mousemove", function(d) {               // details-on-demand
-            const v = yearData.get(+d.id);
+            // read the CURRENT year's data live (not the draw-time snapshot) so the
+            // tooltip stays in sync with the slider/animation, matching the map fill.
+            const v = (ch4ByYear.get(currentYear) || new Map()).get(+d.id);
             const name = (d.properties && d.properties.name) ? d.properties.name : "Unknown";
             tooltip.style("opacity", 1)
                 .style("left", (d3.event.pageX + 12) + "px")
                 .style("top",  (d3.event.pageY + 12) + "px")
                 .html(`<strong>${name}</strong><br>` +
-                      (v == null ? "No data" : `CH\u2084: ${d3.format(",.0f")(v)} kt`));
+                      (v == null ? "No data" : `Beef CH\u2084: ${d3.format(",.0f")(v)} kt`));
             if (+d.id !== selectedM49) d3.select(this).attr("stroke", "#222").attr("stroke-width", 1);
         })
         .on("mouseout", function(d) {
@@ -124,7 +170,7 @@ function draw() {
         })
         .on("click", function(d) { toggleSelect(+d.id); });
 
-    drawMapLegend(mapG, innerH);
+    drawMapLegend(mapG, innerH, mapW);
 
     // ===================== right column: views 2 + 3 =====================
     const rightG = svg.append("g")
@@ -136,16 +182,47 @@ function draw() {
     buildLagChart(rightG, rightW, lagBoxH);
     buildBarChart(rightG.append("g").attr("transform", `translate(0, ${lagBoxH + rGap})`), rightW, barBoxH);
 
+    // record each view's pixel rectangle so the guided tour can spotlight one at a time
+    const rightX = margin.left + mapW + gap;
+    viewBounds = {
+        map: { x: margin.left, y: margin.top, w: mapW, h: innerH },
+        lag: { x: rightX, y: margin.top, w: rightW, h: lagBoxH },
+        bar: { x: rightX, y: margin.top + lagBoxH + rGap, w: rightW, h: barBoxH }
+    };
+
     // apply year- and selection-dependent state to the freshly built scene
     updateYear(currentYear, 0);
     updateSelection();
+    applyFocus(0);              // re-draw tour spotlight (svg was cleared above)
+}
+
+// draw / move the guided-tour spotlight rectangle around the currently focused view.
+// Cleared automatically when the tour ends or when no view is focused.
+function applyFocus(dur) {
+    const svg = d3.select("svg");
+    svg.selectAll(".tour-focus").remove();
+    if (!tourActive) return;
+    const act = ACTS[actIndex];
+    const b = act && viewBounds[act.focus];
+    if (!b) return;
+    const pad = 8;
+    svg.append("rect")                          // appended last so it sits on top of the charts
+        .attr("class", "tour-focus")
+        .attr("x", b.x - pad).attr("y", b.y - pad)
+        .attr("width", b.w + pad * 2).attr("height", b.h + pad * 2)
+        .attr("rx", 6).attr("fill", "none")
+        .attr("stroke", ACCENT).attr("stroke-width", 2.5)
+        .attr("stroke-dasharray", "6,4")
+        .style("pointer-events", "none")
+        .style("opacity", 0)
+        .transition().duration(dur || 0).style("opacity", 1);
 }
 
 // ---- View 2: dual-axis global CH4 vs temperature anomaly -----------------
 function buildLagChart(parent, boxW, boxH) {
     parent.append("text").attr("x", 0).attr("y", 6)
         .attr("font-size", "13px").attr("font-weight", "bold").attr("fill", "#333")
-        .text("Global agricultural CH\u2084 vs. temperature anomaly");
+        .text("Global beef-cattle methane vs. temperature anomaly");
 
     const m = { top: 30, right: 52, bottom: 22, left: 56 };
     const w = Math.max(60, boxW - m.left - m.right);
@@ -197,7 +274,7 @@ function buildLagChart(parent, boxW, boxH) {
 function buildBarChart(g, boxW, boxH) {
     g.append("text").attr("class", "bar-title").attr("x", 0).attr("y", 6)
         .attr("font-size", "13px").attr("font-weight", "bold").attr("fill", "#333")
-        .text("Top 10 emitters");
+        .text("Top 10 beef-methane emitters");
     g.append("text").attr("class", "sel-label").attr("x", 0).attr("y", 22)
         .attr("font-size", "10px").attr("fill", "#888")
         .text("Click a country to highlight it");
@@ -215,7 +292,7 @@ function buildBarChart(g, boxW, boxH) {
 // rebuild the bar rows for the current year (enter/update/exit, keyed by m49)
 function updateBarChart(dur) {
     const data = topEmitters(currentYear, 10);
-    d3.select(".bar-title").text(`Top 10 emitters \u2014 ${currentYear}`);
+    d3.select(".bar-title").text(`Top 10 beef-methane emitters \u2014 ${currentYear}`);
 
     const rows = d3.select("svg").select(".bars").selectAll("g.bar-row").data(data, d => d.m49);
 
@@ -339,10 +416,81 @@ function setupControls() {
     d3.select("#year-label").text(currentYear);
 }
 
-// sequential color legend for the map (gradient bar + min/max labels), placed bottom-left
-function drawMapLegend(mapG, innerH) {
+// ---- guided tour (Martini Glass) -----------------------------------------
+
+// stop any running playback (used when an act starts or the tour ends)
+function stopPlay() {
+    if (playTimer) {
+        playTimer.stop();
+        playTimer = null;
+        d3.select("#play-btn").html("&#9654; Play");
+    }
+}
+
+// move to act i: set year + selection, spotlight its view, update the card,
+// and (for the lag act) auto-play the timeline so the lag is visible.
+function gotoAct(i) {
+    actIndex = Math.max(0, Math.min(ACTS.length - 1, i));
+    const act = ACTS[actIndex];
+    stopPlay();
+
+    selectedM49 = act.select;          // null clears any prior highlight
+    updateYear(act.year, 400);
+    updateSelection();
+    applyFocus(400);
+
+    d3.select("#tour-step").text(`Act ${actIndex + 1} / ${ACTS.length}`);
+    d3.select("#tour-title").text(act.title);
+    d3.select("#tour-body").text(act.body);
+    d3.select("#tour-prev").attr("disabled", actIndex === 0 ? true : null);
+    d3.select("#tour-next").html(actIndex === ACTS.length - 1 ? "Explore freely &#8594;" : "Next &#8594;");
+
+    if (act.play) {                    // Act 2: animate 1990 -> act.year to reveal the lag
+        updateYear(MIN_YEAR, 0);
+        applyFocus(0);
+        playTimer = d3.interval(function() {
+            if (currentYear >= act.year) { stopPlay(); return; }
+            updateYear(currentYear + 1, 320);
+        }, 360);
+        d3.select("#play-btn").html("&#10074;&#10074; Pause");
+    }
+}
+
+// enter free-exploration mode: hide the card, clear the spotlight, keep all views live
+function endTour() {
+    tourActive = false;
+    stopPlay();
+    d3.select("#tour").style("display", "none");
+    d3.select(".tour-focus").remove();
+    selectedM49 = null;        // clear the act's highlight so free exploration starts clean
+    updateSelection();
+}
+
+// restart the guided tour from Act 1
+function startTour() {
+    tourActive = true;
+    d3.select("#tour").style("display", "block");
+    gotoAct(0);
+}
+
+function setupTour() {
+    d3.select("#tour-prev").on("click", function() { gotoAct(actIndex - 1); });
+    d3.select("#tour-next").on("click", function() {
+        if (actIndex === ACTS.length - 1) endTour();
+        else gotoAct(actIndex + 1);
+    });
+    d3.select("#tour-skip").on("click", endTour);
+    d3.select("#replay-btn").on("click", startTour);
+    gotoAct(0);                        // open on Act 1
+}
+
+// sequential color legend for the map (gradient bar + min/max labels), placed bottom-right
+function drawMapLegend(mapG, innerH, mapW) {
     const legendWidth = 170, legendHeight = 9;
-    const lg = mapG.append("g").attr("transform", `translate(6, ${innerH - 20})`);
+    // anchor at the map's bottom-right (over empty ocean) so it never collides with
+    // the guided-tour card pinned to the viewport's bottom-left.
+    const legendX = Math.max(6, mapW - (52 + legendWidth) - 6);
+    const lg = mapG.append("g").attr("transform", `translate(${legendX}, ${innerH - 20})`);
 
     const grad = mapG.append("defs").append("linearGradient").attr("id", "legend-grad");
     d3.range(0, 1.01, 0.1).forEach(function(t) {
@@ -351,7 +499,7 @@ function drawMapLegend(mapG, innerH) {
     });
 
     lg.append("text").attr("x", 0).attr("y", -4).attr("font-size", "10px").attr("fill", "#555")
-        .text("CH\u2084 (kt):");
+        .text("Beef CH\u2084 (kt):");
     lg.append("rect").attr("x", 52).attr("width", legendWidth).attr("height", legendHeight)
         .attr("fill", "url(#legend-grad)").attr("stroke", "#ccc");
     lg.append("text").attr("x", 52).attr("y", legendHeight + 11)
@@ -363,7 +511,7 @@ function drawMapLegend(mapG, innerH) {
 // load world geometry + emissions + temperature data in parallel
 Promise.all([
     d3.json("https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json"),
-    d3.csv("data/global_greenhouse_gas_emission_from_agriculture.csv"),
+    d3.csv("data/cattle_beef_methane.csv"),
     d3.csv("data/temperature_change.csv")
 ]).then(function(results) {
     const world = results[0];
@@ -373,10 +521,10 @@ Promise.all([
     worldFeatures = topojson.feature(world, world.objects.countries).features;
     const validIds = new Set(worldFeatures.map(f => +f.id));   // country codes that exist on the map
 
-    // FAO uses a few non-standard area codes that don't match the map's ISO/M49 ids.
-    // Map them onto the matching map feature. 159 = FAO "China" (mainland+Taiwan+HK+Macao)
-    // -> 156 (China on the map). Slightly overstates mainland but avoids China rendering as no-data.
-    const M49_OVERRIDE = { 159: 156 };
+    // FAO splits China into "China, mainland" (M49 156, matches the map) and an aggregate
+    // "China" (M49 159 = mainland + Hong Kong + Macao + Taiwan, NOT a map id). We rely on the
+    // validIds filter below to keep only codes that exist on the map: 156 joins China correctly,
+    // while the 159 aggregate is dropped so it is NOT double-counted in the global total.
 
     // build year -> (m49 -> CH4 kt), country names, and the global yearly total
     ch4ByYear = new Map();
@@ -384,8 +532,7 @@ Promise.all([
     ch4GlobalByYear = new Map();
     rows.forEach(function(r) {
         if (r.Element !== "Emissions (CH4)") return;           // CH4 only
-        const m49raw = +r["Area Code (M49)"];
-        const m49  = M49_OVERRIDE[m49raw] || m49raw;           // remap FAO-specific codes
+        const m49  = +r["Area Code (M49)"];
         const year = +r.Year;
         const val  = +r.Value;
         if (!validIds.has(m49) || !Number.isFinite(val)) return;   // skip aggregates / bad rows
@@ -418,6 +565,7 @@ Promise.all([
 
     draw();
     setupControls();
+    setupTour();
 }).catch(function(error) {
     console.log(error);
 });

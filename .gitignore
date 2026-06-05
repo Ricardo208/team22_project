@@ -1,0 +1,7 @@
+# Large raw FAOSTAT bulk downloads — kept locally for report documentation,
+# but too large/heavy for GitHub. Re-downloadable from bulks-faostat.fao.org
+# (see data/build_beef_methane.ps1 header for source domains GLE + EI).
+data/_gle/
+data/_gle.zip
+data/_ei/
+data/_ei.zip
