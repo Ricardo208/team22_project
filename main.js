@@ -1,45 +1,35 @@
-// The Cattle-Climate Feedback Loop - Team 22
-// Coordinated multi-view dashboard (Martini Glass), all driven by one shared time slider.
-//   View 1 (main character): choropleth world map of agricultural CH4 emissions by country.
-//   View 2: dual-axis lag chart - global CH4 (left axis) vs global temperature anomaly (right).
-//   View 3: bar chart of the top-10 emitting countries for the selected year.
-// Interactions: shared time slider + play/pause, hover tooltips, click a country to highlight
-//   it across the map and the bar chart, animated transitions on every year change.
-//
-// Data: beef-attributed cattle methane (kt CH4, 1990-2021) = FAOSTAT cattle CH4 (GLE,
-//   "Livestock total (Emissions CH4)", FAO TIER 1) split by each country's beef:dairy ratio
-//   from FAOSTAT Emissions intensities (EI, CO2eq of "Meat of cattle" vs "Raw milk of cattle").
-//   Beef's share is therefore an estimate, disclosed in the UI. Temperature: FAO World
-//   "Meteorological year" anomaly (degC, 1961-2019). Geo: world-atlas. See data/build_beef_methane.ps1.
-// Join: FAO "Area Code (M49)" matches the numeric country id in the world-atlas TopoJSON.
-// Coding style follows the class stack (HW2/HW3): D3 v5, responsive draw() + resize,
-//   margin-convention, d3.json/d3.csv(...).then().catch(), enter/update/exit, inline comments.
+// Team 22 - Cattle-Climate Feedback Loop
+// Dataset: beef-attributed cattle methane (kt CH4, 1990-2021) + global temperature anomaly
+// Idea: show how beef methane drives warming with a lag (Martini Glass: 5-act tour then free explore)
+// View 1: choropleth map (beef CH4 by country)
+// View 2: dual-axis lag chart (global CH4 vs temperature)
+// View 3: bar chart (top 10 emitters)
+// Interactions: shared time slider + play, hover tooltips, click to select country
 
-const MIN_YEAR = 1990;          // earliest year in the emissions dataset
-const MAX_YEAR = 2021;          // latest year in the emissions dataset
-let currentYear = MAX_YEAR;     // year currently shown (driven by the shared slider)
-let selectedM49 = null;         // m49 of the clicked country, or null when nothing selected
+const MIN_YEAR = 1990;
+const MAX_YEAR = 2021;
+let currentYear = MAX_YEAR;     // slider position
+let selectedM49 = null;         // clicked country m49 or null
 
-// cached data (built once on load, reused on every resize redraw)
-let worldFeatures   = null;     // array of GeoJSON country features
+// cached data for resize
+let worldFeatures   = null;
 let ch4ByYear       = null;     // Map: year -> Map(m49 -> CH4 kt)
-let countryName     = null;     // Map: m49 -> country name
-let ch4GlobalByYear = null;     // Map: year -> summed global CH4 kt
-let tempByYear      = null;     // Map: year -> global temperature anomaly (degC)
-let colorMax = 1;               // max single-country CH4 (map color + bar x domain)
-let ch4GlobalMax = 1;           // max global CH4 (lag chart left axis)
-let tempMax = 1;                // max global anomaly (lag chart right axis)
-let playTimer = null;           // d3.interval handle while the animation is playing
+let countryName     = null;     // Map: m49 -> name
+let ch4GlobalByYear = null;     // Map: year -> global CH4 kt
+let tempByYear      = null;     // Map: year -> temp anomaly degC
+let colorMax = 1;               // max country CH4 for color scale
+let ch4GlobalMax = 1;           // max global CH4 for lag chart
+let tempMax = 1;                // max temp for lag chart
+let playTimer = null;           // d3.interval handle
 
-// ---- guided-tour state (Martini Glass: 5 author-driven acts, then free exploration) ----
-let tourActive = true;          // true while the guided tour is running
-let actIndex = 0;               // current act (0-based)
-let viewBounds = {};            // {map,lag,bar} pixel rects, captured each draw() for focus highlight
-const ACCENT = "#2c7fb8";       // tour highlight color (matches CH4 blue)
-const BRAZIL_M49 = 76;          // largest beef-attributed methane emitter (highlighted in Act 4)
+// ---- guided tour (Martini Glass) ----
+let tourActive = true;
+let actIndex = 0;
+let viewBounds = {};            // pixel rects for spotlight
+const ACCENT = "#2c7fb8";
+const BRAZIL_M49 = 76;          // Act 4 highlight
 
-// Each act sets the year, an optional selected country, which view to spotlight, an optional
-// auto-play, and the narrative copy shown in the on-screen card.
+// act config: year, selection, focus view, autoplay, narrative
 const ACTS = [
     {
         year: 1990, select: null, focus: "map", play: false,
@@ -80,14 +70,12 @@ const TEMP_COLOR = "#e34a33";   // temperature encoded red across the lag chart
 let lagX, lagYch4, lagYtemp;
 let barXScale, barRowH, barLabelW;
 
-// ---- small helpers -------------------------------------------------------
+// ---- helpers ----
 
-// subtitle text reflects the year currently shown
 function subtitleText() {
     return `Beef-attributed cattle methane (CH\u2084) by country, ${currentYear} \u2014 kilotonnes (estimated)`;
 }
 
-// short story caption that changes by era (lightweight narrative layer)
 function narrativeText(year) {
     if (year <= 1995) return "Early 1990s: beef herds are already a major methane source, but global warming is only beginning to climb.";
     if (year <= 2005) return "2000s: beef production expands \u2014 especially across the Americas \u2014 and methane keeps rising as the temperature anomaly accelerates.";
@@ -95,10 +83,8 @@ function narrativeText(year) {
     return "Recent years: beef-driven methane reaches record highs; the full warming response is still unfolding.";
 }
 
-// fill color for a CH4 value (grey if no data)
-function fillFor(v) { return v == null ? "#eaeaea" : colorScale(Math.sqrt(v)); }
+function fillFor(v) { return v == null ? "#eaeaea" : colorScale(Math.sqrt(v)); }  // grey if no data
 
-// top-n emitting countries for a given year, sorted descending
 function topEmitters(year, n) {
     const m = ch4ByYear.get(year) || new Map();
     const arr = [];
@@ -115,16 +101,16 @@ function draw() {
     const height = window.innerHeight;
 
     const svg = d3.select("svg");
-    svg.selectAll("*").remove();    // clear before redraw
+    svg.selectAll("*").remove();
 
-    const margin = { top: 74, right: 18, bottom: 58, left: 18 };  // bottom leaves room for control bar
+    const margin = { top: 74, right: 18, bottom: 58, left: 18 };
     const innerW = width  - margin.left - margin.right;
     const innerH = height - margin.top  - margin.bottom;
     const gap = 26;
     const mapW = Math.max(320, innerW * 0.55);
     const rightW = Math.max(220, innerW - mapW - gap);
 
-    // ---- header (title + year subtitle + narrative caption) ----
+    // ---- header ----
     svg.append("text").attr("x", margin.left).attr("y", 28)
         .attr("font-size", "20px").attr("font-weight", "bold").attr("fill", "#222")
         .text("The Cattle-Climate Feedback Loop");
@@ -133,12 +119,11 @@ function draw() {
     svg.append("text").attr("class", "narrative").attr("x", margin.left).attr("y", 65)
         .attr("font-size", "11px").attr("font-style", "italic").attr("fill", "#888")
         .text(narrativeText(currentYear));
-    // methods/source disclosure (top-right of header)
     svg.append("text").attr("x", width - margin.right).attr("y", 28).attr("text-anchor", "end")
         .attr("font-size", "10px").attr("fill", "#aaa")
         .text("Beef share estimated from FAO beef/dairy emission split \u00b7 Data: FAOSTAT GLE + EI");
 
-    // ===================== View 1: choropleth map =====================
+    // ---- View 1: choropleth map ----
     const mapG = svg.append("g").attr("transform", `translate(${margin.left}, ${margin.top})`);
     const fc = { type: "FeatureCollection", features: worldFeatures };
     const projection = d3.geoNaturalEarth1().fitSize([mapW, innerH], fc);
@@ -150,9 +135,7 @@ function draw() {
         .attr("fill", d => fillFor(yearData.get(+d.id)))
         .attr("stroke", "#fff").attr("stroke-width", 0.4)
         .style("cursor", "pointer")
-        .on("mousemove", function(d) {               // details-on-demand
-            // read the CURRENT year's data live (not the draw-time snapshot) so the
-            // tooltip stays in sync with the slider/animation, matching the map fill.
+        .on("mousemove", function(d) {
             const v = (ch4ByYear.get(currentYear) || new Map()).get(+d.id);
             const name = (d.properties && d.properties.name) ? d.properties.name : "Unknown";
             tooltip.style("opacity", 1)
@@ -164,15 +147,14 @@ function draw() {
         })
         .on("mouseout", function(d) {
             tooltip.style("opacity", 0);
-            d3.select(this)                          // restore selected highlight or default
-                .attr("stroke", +d.id === selectedM49 ? "#111" : "#fff")
+            d3.select(this).attr("stroke", +d.id === selectedM49 ? "#111" : "#fff")
                 .attr("stroke-width", +d.id === selectedM49 ? 1.6 : 0.4);
         })
         .on("click", function(d) { toggleSelect(+d.id); });
 
     drawMapLegend(mapG, innerH, mapW);
 
-    // ===================== right column: views 2 + 3 =====================
+    // ---- right column: views 2 + 3 ----
     const rightG = svg.append("g")
         .attr("transform", `translate(${margin.left + mapW + gap}, ${margin.top})`);
     const rGap = 24;
@@ -182,7 +164,6 @@ function draw() {
     buildLagChart(rightG, rightW, lagBoxH);
     buildBarChart(rightG.append("g").attr("transform", `translate(0, ${lagBoxH + rGap})`), rightW, barBoxH);
 
-    // record each view's pixel rectangle so the guided tour can spotlight one at a time
     const rightX = margin.left + mapW + gap;
     viewBounds = {
         map: { x: margin.left, y: margin.top, w: mapW, h: innerH },
@@ -190,14 +171,11 @@ function draw() {
         bar: { x: rightX, y: margin.top + lagBoxH + rGap, w: rightW, h: barBoxH }
     };
 
-    // apply year- and selection-dependent state to the freshly built scene
     updateYear(currentYear, 0);
     updateSelection();
-    applyFocus(0);              // re-draw tour spotlight (svg was cleared above)
+    applyFocus(0);
 }
 
-// draw / move the guided-tour spotlight rectangle around the currently focused view.
-// Cleared automatically when the tour ends or when no view is focused.
 function applyFocus(dur) {
     const svg = d3.select("svg");
     svg.selectAll(".tour-focus").remove();
@@ -206,8 +184,7 @@ function applyFocus(dur) {
     const b = act && viewBounds[act.focus];
     if (!b) return;
     const pad = 8;
-    svg.append("rect")                          // appended last so it sits on top of the charts
-        .attr("class", "tour-focus")
+    svg.append("rect").attr("class", "tour-focus")
         .attr("x", b.x - pad).attr("y", b.y - pad)
         .attr("width", b.w + pad * 2).attr("height", b.h + pad * 2)
         .attr("rx", 6).attr("fill", "none")
