@@ -43,18 +43,17 @@ Then open `http://localhost:8000` in the browser. The guided tour starts on load
 
 ## Reproducibility
 
-The processed `cattle_beef_methane.csv` is built from two FAOSTAT bulk datasets by `data/build_beef_methane.ps1`. The raw source files are large and are not committed. They are listed in `.gitignore`. The script estimates beef methane with the formula `beef_CH4 = cattle_CH4 * beef_CO2eq / (beef_CO2eq + milk_CO2eq)`.
+The processed `cattle_beef_methane.csv` is built from two FAOSTAT bulk datasets by `data/build_beef_methane.py`. The raw source files are large and are not committed. They are listed in `.gitignore`. The script estimates beef methane with the formula `beef_CH4 = cattle_CH4 * beef_CO2eq / (beef_CO2eq + milk_CO2eq)`. It uses only the Python standard library, so no package install is needed.
 
 To rebuild the dataset from scratch, follow these steps.
 
 1. Download the FAOSTAT "Emissions from Livestock" (GLE) bulk file and filter it to cattle methane. Keep the rows where Item is `Cattle`, Element is `Livestock total (Emissions CH4)`, and Source is `FAO TIER 1`. Save this as `data/_gle_cattle_raw.csv`.
 2. Download the FAOSTAT "Emissions Intensities" (EI) bulk file and extract it to `data/_ei/`. The script reads `Environment_Emissions_intensities_E_All_Data_(Normalized).csv` and uses item code 867 for beef and item code 882 for milk under the element `Emissions (CO2eq) (AR5)`.
-3. Open `data/build_beef_methane.ps1` and set the `$base` path to your local `data` folder.
-4. Run the script with PowerShell.
+3. Run the script with Python. It finds its own folder, so no path editing is needed.
 
 ```
 cd app/data
-pwsh ./build_beef_methane.ps1
+python build_beef_methane.py
 ```
 
 The script writes `cattle_beef_methane.csv` with columns that match what the app expects, so the rebuilt file is a drop-in replacement. It prints the row count and the number of country year records skipped for having no beef or dairy split.
