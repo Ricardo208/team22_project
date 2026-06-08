@@ -6,7 +6,7 @@ An interactive narrative visualization that shows how beef-attributed cattle met
 
 ## Description
 
-The repository holds a single-page D3 application and the data it reads. There are three source files in the `app` folder and a `data` folder.
+The repository holds a single-page D3 application and the data it reads. There are three source files in the repository along with a `data` folder.
 
 - `index.html` builds the page layout and loads D3 v5 and topojson-client from a CDN.
 - `main.js` holds all of the visualization logic. It loads the data, builds the three coordinated views, drives them from one shared time slider, and runs the five act guided tour.
@@ -26,7 +26,7 @@ The country geometry is loaded at runtime from the world-atlas CDN, so no geomet
 The app is static and needs no build step and no package install. You need Python to serve the files and a modern web browser. D3, topojson-client, and the map geometry load from a CDN, so an internet connection is required.
 
 1. Clone the repository.
-2. Move into the `app` folder.
+2. Open code in your editor.
 
 The dataset the app reads is already committed in `data/`, so no dataset fetching is needed to run the demo. Fetching the raw FAO source data is only needed to rebuild the dataset from scratch, which is covered under Reproducibility below.
 
