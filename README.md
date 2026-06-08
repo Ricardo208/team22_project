@@ -23,7 +23,7 @@ The country geometry is loaded at runtime from the world-atlas CDN, so no geomet
 
 ## Installation
 
-The app is static and needs no build step and no package install. You need Python to serve the files and a modern web browser. D3, topojson-client, and the map geometry load from a CDN, so an internet connection is required.
+The app is static and needs no build step and no package install. You need Python to run a local web server and a modern web browser. D3, topojson-client, and the map geometry load from a CDN, so an internet connection is required.
 
 1. Clone the repository.
 2. Open code in your editor.
@@ -32,7 +32,7 @@ The dataset the app reads is already committed in `data/`, so no dataset fetchin
 
 ## Execution
 
-Serve the repository root over a local web server and open it in the browser. The app must be served over http rather than opened from the file system, because it loads the data with fetch.
+Start a local web server from the repository root and open it in the browser. The app must load over http rather than from the file system, because it reads the data with fetch.
 
 ```
 python -m http.server 8000
