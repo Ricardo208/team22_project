@@ -32,10 +32,9 @@ The dataset the app reads is already committed in `data/`, so no dataset fetchin
 
 ## Execution
 
-Serve the `app` folder over a local web server and open it in the browser. The app must be served over http rather than opened from the file system, because it loads the data with fetch.
+Serve the repository root over a local web server and open it in the browser. The app must be served over http rather than opened from the file system, because it loads the data with fetch.
 
 ```
-cd app
 python -m http.server 8000
 ```
 
@@ -52,7 +51,7 @@ To rebuild the dataset from scratch, follow these steps.
 3. Run the script with Python. It finds its own folder, so no path editing is needed.
 
 ```
-cd app/data
+cd data
 python build_beef_methane.py
 ```
 
