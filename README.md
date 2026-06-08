@@ -38,7 +38,7 @@ Start a local web server from the repository root and open it in the browser. Th
 python -m http.server 8000
 ```
 
-Then open `http://localhost:8000` in the browser. The guided tour starts on load. Use Next and Back to move through the five acts, or use Skip tour to go straight to free exploration. The time slider and the play button drive all three views. Click any country to highlight it across views. The Replay tour button restarts the sequence at any time.
+Then open `http://localhost:8000` in the browser. The guided tour starts on load. Use "Next" and "Back" to move through the five acts, or use "Skip tour" to go straight to free exploration. The time slider and the play button drive all three views. Click any country to highlight it across views. The "Replay tour" button restarts the sequence at any time.
 
 ## Reproducibility
 
